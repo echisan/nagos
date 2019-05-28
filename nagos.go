@@ -1,0 +1,6 @@
+package nagos
+
+func main() {
+
+}
+
