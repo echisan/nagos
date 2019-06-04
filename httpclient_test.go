@@ -1,18 +1,28 @@
 package nagos
 
 import (
-	"fmt"
-	"net/url"
 	"testing"
 )
 
-func TestCase(t *testing.T) {
+var rc = RegistryConfig{
+	Host:        "localhost",
+	Port:        8848,
+	ContextPath: "/nacos",
+}
 
-	params := url.Values{}
-	params["name"] = []string{"dick"}
-	params["age"] = []string{"12"}
+var c = NewClient(&ClientConfig{RegistryConfig: []RegistryConfig{rc}})
 
-	encode := params.Encode()
-	fmt.Println(encode)
+func TestClient_PostConfig(t *testing.T) {
+
+	cf := &Config{
+		Content: "go-content",
+		Group:   "go-group",
+		DataId:  "go-data-id",
+	}
+
+	err := c.PostConfig(cf)
+	if err != nil {
+		panic(err)
+	}
 
 }

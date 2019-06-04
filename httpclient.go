@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-var DefaultClient = &http.Client{}
+const DefaultTimeout = 3 * time.Second
+const DefaultContentType = "application/x-www-form-urlencoded"
 
 type HttpClient interface {
 	Get(url string, header http.Header, values url.Values) (*http.Response, error)
@@ -17,23 +18,8 @@ type HttpClient interface {
 }
 
 type DefaultHttpClient struct {
-	Header  http.Header
 	Timeout time.Duration
-}
-
-func NewDefaultHttpClient() *DefaultHttpClient {
-
-	client :=  &DefaultHttpClient{}
-
-	header := make(map[string][]string)
-	header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-
-	client.Header = header
-	client.Timeout = 3 * time.Second
-
-	DefaultClient.Timeout = 3 * time.Second
-
-	return client
+	client  http.Client
 }
 
 func (c *DefaultHttpClient) Get(url string, header http.Header, values url.Values) (*http.Response, error) {
@@ -54,23 +40,45 @@ func (c *DefaultHttpClient) Delete(url string, header http.Header, values url.Va
 
 func (c *DefaultHttpClient) doRequest(method string, url string, header http.Header, values url.Values) (*http.Response, error) {
 
-	req, err := http.NewRequest(method, url, strings.NewReader(values.Encode()))
-	req.Header = c.Header
+	var req *http.Request
+	var err error
 
-	if header != nil {
-		for k, v := range header {
-			req.Header[k] = v
-		}
+	if method == http.MethodGet {
+		req, err = c.NewRequest(method, url+"?"+values.Encode(), header, nil)
+	} else {
+		req, err = c.NewRequest(method, url, header, values)
 	}
 
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := DefaultClient.Do(req)
-
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	return resp, nil
+}
+
+func NewDefaultHttpClient() *DefaultHttpClient {
+	d := DefaultHttpClient{}
+	d.Timeout = DefaultTimeout
+	d.client = http.Client{}
+	return &d
+}
+
+func (*DefaultHttpClient) NewRequest(method string, url string, header http.Header, values url.Values) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	// set header
+	req.Header.Set("Content-Type", DefaultContentType)
+	if header != nil {
+		for k, v := range header {
+			for _, s := range v {
+				header.Add(k, s)
+			}
+		}
+	}
+	return req, nil
 }

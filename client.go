@@ -1,90 +1,86 @@
 package nagos
 
 import (
-	"fmt"
+	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
-	"time"
+	"sync"
 )
 
+// nacos客户端主入口
+// config，service，都放这里了
 type Client struct {
 	RegistryConfigs []RegistryConfig
 
+	// http客户端
 	HttpClient HttpClient
+
+	mux sync.Mutex
+
+	Log log.Logger
 }
 
-func (c *Client) PostConfig(config *Config) error {
+type ClientConfig struct {
+	RegistryConfig []RegistryConfig
+}
 
-	for _, rc := range c.RegistryConfigs {
+func NewClient(clientConfig *ClientConfig) *Client {
+	c := &Client{
+		RegistryConfigs: clientConfig.RegistryConfig,
+		HttpClient:      NewDefaultHttpClient(),
+	}
+	return c
+}
 
-		u := fmt.Sprintf("%s://%s:%d%s%s", protocol, rc.Host, rc.Port, rc.ContextPath, "/v1/cs/configs")
+func do(c *Client, path string, h func(url string) (*http.Response, error)) (string, error) {
+	var msg string
+	for i, rc := range c.RegistryConfigs {
+		u := rc.UrlWithPath(path)
 
-		fmt.Println(u)
-
-		values := url.Values{"dataId": {config.DataId}, "group": {config.Group}, "content": {config.Content}}
-
-		if config.Tenant != "" {
-			values.Set("tenant", config.Tenant)
-		}
-
-		resp, err := c.HttpClient.Post(u, nil, values)
+		// do something
+		resp, err := h(u)
 
 		if err != nil {
-			return err
+			if hasNextRegistry(i, &c.RegistryConfigs) {
+				log.Printf("cannot connect to server %s, try next registry", u)
+			} else {
+				log.Printf("cannot connect to all server.")
+				panic(err)
+			}
+			continue
 		}
 
-		bytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-
-		msg := string(bytes)
-		if msg == "true" {
+		code := resp.StatusCode
+		if code != 200 {
+			if code == 400 {
+				log.Printf("get an error response from %s,bad request", u)
+			} else if code == 403 {
+				log.Printf("server %s,forbidden", u)
+			} else if code == 404 {
+				log.Printf("server %s,not found", u)
+			} else if code == 500 {
+				log.Printf("internal server error, server %s", u)
+			} else {
+				log.Printf("server %s response status code is %d", u, code)
+			}
+			log.Printf("response status code is %d", code)
 			break
-		} else {
-			log.Fatalf("post config failed, msg:%s", msg)
-			time.Sleep(3 * time.Second)
 		}
+
+		msg, err := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			panic(err)
+		}
+
+		return string(msg), nil
 	}
-	return nil
+	return "", errors.New("api request failed, response status code wasn't 200, msg: " + string(msg))
 }
 
-func (c *Client) GetConfig(dataId, group, tenant string) error {
-	for _, rc := range c.RegistryConfigs {
-		u := fmt.Sprintf("%s://%s:%d%s%s", protocol, rc.Host, rc.Port, rc.ContextPath, "/v1/cs/configs")
-
-		values := url.Values{}
-		values.Set("dataId", dataId)
-		values.Set("group", group)
-		if tenant != "" {
-			values.Set("tenant", tenant)
-		}
-
-		v := http.Header{}
-		v.Set("Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJuYWNvcyIsImF1dGgiOiIiLCJleHAiOjE1NTkzMTQzMDZ9.3D0sI9IRNAowIDF81Ibk3VJ49kO2GeBb4AnDCtQX3GY")
-		resp, err := c.HttpClient.Get(u+"/"+values.Encode(), v, nil)
-		if err != nil {
-			return err
-		}
-
-		bytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-
-		msg := string(bytes)
-
-		fmt.Println(msg)
-
-		//if msg == "true" {
-		//	break
-		//} else {
-		//	log.Fatalf("post config failed, msg:%s", msg)
-		//	time.Sleep(3 * time.Second)
-		//}
-		return nil
-	}
-	return nil
+func hasNextRegistry(i int, r *[]RegistryConfig) bool {
+	l := len(*r)
+	return i < l
 }
