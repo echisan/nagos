@@ -1,6 +1,9 @@
 package nagos
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 //var nc = NewClient(&ClientConfig{
 //	RegistryConfig: []RegistryConfig{
@@ -22,5 +25,6 @@ func TestClient_DelConfig(t *testing.T) {
 }
 
 func TestConfigListener(t *testing.T) {
-
+	s2 := "2"
+	fmt.Println(string(s2[0]))
 }

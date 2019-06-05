@@ -6,12 +6,16 @@ import (
 	"net/url"
 )
 
-type ConfigListener func(received string)
+type ConfigListener struct {
+	DataId string
+	Group string
+	listener func(received string)
+}
 
-var cfl = &Configs{}
+var cfls = &Configs{}
 
 type Configs struct {
-	listeners []ConfigListener
+	listeners []*ConfigListener
 }
 
 func (c *Client) DelConfig(param *ConfigParam) error {
@@ -96,6 +100,13 @@ func (c *Client) GetConfig(param *ConfigParam) (string, error) {
 	return str, nil
 }
 
-func (c *Client) AddConfigListener(l func(received string)) {
-
+// add configListener
+func (c *Client) AddConfigListener(cfl *ConfigListener) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	cfls.listeners = append(cfls.listeners, cfl)
 }
+
+func listen(cfl *ConfigListener) {
+}
+
